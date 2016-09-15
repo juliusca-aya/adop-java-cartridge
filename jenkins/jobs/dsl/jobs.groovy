@@ -1,196 +1,240 @@
-// Folders
-def workspaceFolderName = "${WORKSPACE_NAME}"
-def projectFolderName = "${PROJECT_NAME}"
-def cicdFolderName = projectFolderName + "/CI-CD2"
-def cicdFolder = folder(cicdFolderName) { displayName('Continuous Integration - Continuous Delivery') }
+def ProjectFolderName= "${WORKSPACE_NAME}"
 
-//Repositories
-def devopsdemo =  "git@gitlab:${WORKSPACE_NAME}/devopsdemo.git"
-def deployment =  "git@gitlab:${WORKSPACE_NAME}/deployment.git"
-def seleniumtest =  "git@gitlab:${WORKSPACE_NAME}/selenium-test.git"
+def generateBuildPipelineView = buildPipelineView(ProjectFolderName + "/Java_Build_Pipeline_View")
+def generateBuildJob = freeStyleJob(ProjectFolderName + "/Build_Java_Project")
+def generateSonarJob = freeStyleJob(ProjectFolderName + "/Sonar_Java_Project")
+def generateDeployJob = freeStyleJob(ProjectFolderName + "/Deploy_Java_Project")
+def generateSeleniumJob = freeStyleJob(ProjectFolderName + "/Selenium_Java_Project")
+//def generateDeployJob = freeStyleJob(ProjectFolderName + "/Deploy_Java_Project")
 
-// Jobs
-def builddemo = mavenJob(cicdFolderName + "/Build_Demo")
-def codeanalysisdemo = freeStyleJob(cicdFolderName + "/Code_Analysis_Demo")
-def deployansibledemo = freeStyleJob(cicdFolderName + "/Deploy_Ansible_Demo")
-def seleniumtestautomation = mavenJob(cicdFolderName + "/Selenium_Test_Automation")
 
-//Pipeline
-def java_pipeline_demo = buildPipelineView(cicdFolderName + "/Java-Pipeline-Demo")
-
-java_pipeline_demo.with{
-    title('Java Pipeline Demo')
-    displayedBuilds(5)
-    selectedJob(cicdFolderName + "/Build_Demo")
-    showPipelineParameters()
-    refreshFrequency(5)
+folder('SchoolSchedule'){
+	description ('Parent Folder')
 }
 
-// Job Configuration
-builddemo.with{
-	properties{
-		configure { project -> project / 'properties' / 'hudson.plugins.copyartifact.CopyArtifactPermissionProperty' / 'projectNameList' {
-			string('Deploy_Ansible_Demo')
+generateBuildPipelineView.with {
+	title('Java_Build_Pipeline_View')
+		displayedBuilds(5)
+		selectedJob(ProjectFolderName + "/Build_Java_Project")
+		alwaysAllowManualTrigger()
+		showPipelineParameters()
+		refreshFrequency(5)
+	}	
+
+
+
+
+
+generateBuildJob.with {
+  
+       properties {
+        copyArtifactPermissionProperty {
+               projectNames('Deploy_Java_Project')
+        	}
+       }
+  
+	scm {
+		git {
+			remote {
+				url("git@gitlab:${WORKSPACE_NAME}/SchoolSchedule.git")
+              	credentials("adop-jenkins-master")
+					}
+			branch('*/master')
 			}
+      
 		}
-	}
+  
 	wrappers {
-        preBuildCleanup()
-    }
-	parameters{
-		stringParam("DEMO_WORKSPACE","","")
-	}
-	scm{
-		git{
-		  remote{
-			url(devopsdemo)
-			credentials("adop-jenkins-master")
-		  }
-		  branch("*/master")
-		}
-	}
-	disableDownstreamTrigger(true)
-	blockOnDownstreamProjects()
-	rootPOM('pom.xml')
-	goals('clean package')
-	triggers {
-        snapshotDependencies(true)
-		configure { project -> project / 'triggers' / 'com.dabsquared.gitlabjenkins.GitLabPushTrigger' {
-            spec('')
-            triggerOnPush(true)
-            triggerOnMergeRequest(true)
-            triggerOpenMergeRequestOnPush('never')
-            triggerOnNoteRequest(true)
-            noteRegex('Release')
-            ciSkip(true)
-            skipWorkInProgressMergeRequest(true)
+		preBuildCleanup()
+		timestamps()
+ 
+			}
+  
+  triggers {
+        gitlabPush {
+            buildOnMergeRequestEvents(true)
+            buildOnPushEvents(true)
+            enableCiSkip(true)
             setBuildDescription(true)
             addNoteOnMergeRequest(true)
-            addCiMessage(false)
-            addVoteOnMergeRequest(true)
-            branchFilterType('All')
-            includeBranchesSpec('')
-            excludeBranchesSpec('')
-            targetBranchRegex('')
-            acceptMergeRequestOnSuccess(false)
-			} 
-		}          
-	} 
-	publishers{
-		archiveArtifacts('**/*.war')
-		downstreamParameterized{
-		  trigger(cicdFolderName + "/Code_Analysis_Demo"){
-				condition("SUCCESS")
-				parameters{
-					predefinedProp("DEMO_WORKSPACE",'$WORKSPACE')
+            rebuildOpenMergeRequest('never')
+            addVoteOnMergeRequest(false)
+            useCiFeatures(false)
+            acceptMergeRequestOnSuccess()
+        }
+    }
+  
+  
+	steps {
+		maven {
+			mavenInstallation('ADOP Maven')
+			goals('''
+				clean
+				package
+				''')
+			}
+			}
+  
+	publishers {
+      
+          	archiveArtifacts { 
+                        pattern('target/*.war') 
+                        onlyIfSuccessful(true) 
+                }
+
+			downstreamParameterized {
+					trigger('Sonar_Java_Project') {
+						condition('UNSTABLE_OR_BETTER')
+						parameters {
+								predefinedProps([CUSTOM_WORKSPACE: '$WORKSPACE'])
+							}
+						}
+					}
 				}
 			}
-		}
-	}
-}
 
-codeanalysisdemo.with{
-	parameters{
-		stringParam("DEMO_WORKSPACE","","")
-	}
-	wrappers {
-        timestamps()
-		colorizeOutput()
+
+generateSonarJob.with{
+  
+  
+  configure {
+    it / 'builders' << 'hudson.plugins.sonar.SonarRunnerBuilder' {
+      properties 'sonar.projectKey=teamtae.org.tae \n sonar.projectName=SchoolSchedule \n sonar.projectVersion=1.0 \n sonar.sources=. \n sonar.language=java \n sonar.sourceEncoding=UTF-8 \n'
+      javaOpts ''
+      jdk '(Inherit From Job)'
+      project ''
+      task ''
     }
-    configure { Project ->
-        Project / builders << 'hudson.plugins.sonar.SonarRunnerBuilder'{
-            project('')
-            properties('''# Required metadata
-sonar.projectKey=org.sonarqube:java-simple-sq-scanner
-sonar.projectName=Java :: Simple Project Not Compiled :: SonarQube Scanner
-sonar.projectVersion=1.0
+  }
 
-# Comma-separated paths to directories with sources (required)
-sonar.sources=.
+  parameters{
+    stringParam('CUSTOM_WORKSPACE')}
+	customWorkspace('$CUSTOM_WORKSPACE')
+	publishers{
+		downstreamParameterized {
+			trigger('Deploy_Java_Project') {
+				condition('UNSTABLE_OR_BETTER')
+				parameters {
+						currentBuild()
+							}
+						}
+					}
+				}
+			}
 
-# Language
-sonar.language=java
+generateDeployJob.with{
 
-# Encoding of the source files
-sonar.sourceEncoding=UTF-8''')
-            javaOpts('')
-            additionalArguments('')
-            jdk('(Inherit From Job)')
-            task('')
+  	wrappers {
+        preBuildCleanup()
+        sshAgent('ec2-user(ssh-key)')
+    }
+   label('ansible')
+  
+   multiscm {
+        git {
+            remote {
+                url('git@gitlab:${WORKSPACE_NAME}/ansible-playbook.git')
+              	credentials("adop-jenkins-master")
+            }
+            extensions {
+                relativeTargetDirectory('ansibleplaybook_folder')
+            }
+          	branch('*/master')
+        }
+        git {
+            remote {
+                url('git@gitlab:teamtae/dockerfile_repo.git')
+              	credentials("adop-jenkins-master")
+            }
+            extensions {
+                relativeTargetDirectory('dockerfile_folder')
+            }
+          	branch('*/master')
+        }
+        git {
+            remote {
+                url('git@gitlab:teamtae/Pemfile.git')
+              	credentials("adop-jenkins-master")
+            }
+            extensions {
+                relativeTargetDirectory('pemfile_folder')
+            }
+          	branch('*/master')
         }
     }
-	publishers{
-        downstreamParameterized{
-			trigger(cicdFolderName + "/Deploy_Ansible_Demo"){
-				condition("SUCCESS")
-                triggerWithNoParameters(true)
-			}
-		}
-	}
-}
-
-deployansibledemo.with{
-    label('ansible')
-    scm{
-		git{
-		  remote{
-			url(deployment)
-			credentials("adop-jenkins-master")
-		  }
-		  branch("*/master")
-		}
-	}
-	wrappers {
-        sshAgent('ec2-user')
-    }
-    steps {
-        configure { Project -> Project / builders / 'hudson.plugins.copyartifact.CopyArtifact' {
-            project('Build_Demo')
-            filter('**/*.war')
-            target('')
-            excludes('')
-            doNotFingerprintArtifacts('false')
-			}
+  
+  
+ 
+  
+  	steps {
+        copyArtifacts('Build_Java_Project') {
+            includePatterns('target/*.war')
+            buildSelector {
+                latestSuccessful(true)
+            }
         }
-        shell('''#!/bin/sh
-set +e
-
-wget -P /tmp/ https://s3-eu-west-1.amazonaws.com/keyfile-key/DevOps-Training-SG-_key.pem
-chmod 0600 /tmp/DevOps-Training-SG-_key.pem
-
-cd ansible-playbook-master/
-ansible-playbook playbook.yml -i hosts --key-file=/tmp/DevOps-Training-SG-_key.pem -u ec2-user --become --become-user root
-rm -rf /tmp/DevOps-Training-SG-_key.pem''')
+     
+    	shell('cd dockerfile_folder && chmod 400 teamtae.pem && scp -i teamtae.pem Dockerfile ../target/SchoolSchedule.war ec2-user@52.42.226.149:~/ && cd ../ansibleplaybook_folder && ansible-playbook playbook.yml -i hosts -u ec2-user && rm -rf teamtae.pem')
     }
-	publishers{
-		downstreamParameterized{
-		  trigger(cicdFolderName + "/Selenium_Test_Automation"){
-				condition("SUCCESS")
-              	triggerWithNoParameters(true)
+  
+  	publishers{
+      
+      downstream('Selenium_Java_Project', 'UNSTABLE')
+
+		//downstreamParameterized {
+		//	trigger('Selenium_Java_Project') {
+		//		condition('UNSTABLE_OR_BETTER')
+		//		parameters {
+		//				currentBuild()
+		//					}
+		//				}
+		//			}
+				}
+  
+  
+
+}
+
+generateSeleniumJob.with{
+
+  	scm {
+		git {
+			remote {
+				url("git@gitlab:${WORKSPACE_NAME}/selenium.git")
+              	credentials("adop-jenkins-master")
+					}
+			branch('*/master')
 			}
+      
 		}
-	}
-}
-
-seleniumtestautomation.with{
-	scm{
-		git{
-		  remote{
-			url(seleniumtest)
-			credentials("adop-jenkins-master")
-		  }
-		  branch("**")
-		}
-	}
-	triggers {
-        snapshotDependencies(true)
-	}
-	preBuildSteps {
-        shell('''# Remove broken tests
-rm -rf ./src/test/java/com/accenture/dcsc/springpetclinic_selenium/OwnerTest.java
-rm -rf ./src/test/java/com/accenture/dcsc/springpetclinic_selenium/selenium''')
+   	wrappers {
+        preBuildCleanup()
     }
-	rootPOM('pom.xml')
-	goals('clean test -B')
-	
-}
+  
+    triggers {
+      
+        gitlabPush {
+            buildOnMergeRequestEvents(true)
+            buildOnPushEvents(true)
+            enableCiSkip(true)
+            setBuildDescription(true)
+            addNoteOnMergeRequest(true)
+            rebuildOpenMergeRequest('never')
+            addVoteOnMergeRequest(false)
+            useCiFeatures(false)
+            acceptMergeRequestOnSuccess()
+        }
+    }
+  
+	steps {
+		maven {
+			mavenInstallation('ADOP Maven')
+			goals('''
+				clean
+				package
+				''')
+            rootPOM('WebTest/pom.xml')
+			}
+			}
+  
+			}
