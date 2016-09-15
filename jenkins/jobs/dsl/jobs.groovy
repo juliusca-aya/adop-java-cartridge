@@ -1,6 +1,4 @@
-def ProjectFolder= "${PROJECT_NAME}"
-def cicdFolderName = ProjectFolder + "/SAMPLE"
-def ProjectFolderName = folder(cicdFolderName) { displayName('Continuous Integration - Continuous Delivery') }
+def ProjectFolderName = "${PROJECT_NAME}"
 
 def generateBuildPipelineView = buildPipelineView(ProjectFolderName + "/Java_Build_Pipeline_View")
 def generateBuildJob = freeStyleJob(ProjectFolderName + "/Build_Java_Project")
